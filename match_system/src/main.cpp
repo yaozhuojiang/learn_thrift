@@ -7,6 +7,12 @@
 #include <thrift/transport/TServerSocket.h>
 #include <thrift/transport/TBufferTransports.h>
 #include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <string>
+#include <vector>
 
 using namespace ::apache::thrift;
 using namespace ::apache::thrift::protocol;
@@ -14,6 +20,46 @@ using namespace ::apache::thrift::transport;
 using namespace ::apache::thrift::server;
 
 using namespace  ::match_service;
+
+struct Task {
+  User user;
+  std::string type;
+};
+
+struct MessageQueue {
+  std::queue<Task> q;
+  std::mutex m;
+  std::condition_variable cv;
+}message_queue;
+
+class Pool {
+public:
+  void save_result(int a, int b)
+  {
+    std::cout << "Match result: " << a << " " << b << std::endl;
+  }
+  void match()
+  {
+    while (users.size() > 1) {
+      User a = users[0], b = users[1];
+      users.erase(users.begin());
+      users.erase(users.begin());
+      save_result(a.id, b.id);
+    }
+  }
+  void add(User user) { users.push_back(user); }
+  void remove(User user)
+  {
+    for (uint32_t i = 0; i < users.size(); i++) {
+      if (users[i].id == user.id) {
+        users.erase(users.begin() + i);
+        break;
+      }
+    }
+  }
+private:
+  std::vector<User> users;
+}pool;
 
 class MatchHandler : virtual public MatchIf {
  public:
@@ -24,16 +70,40 @@ class MatchHandler : virtual public MatchIf {
   int32_t add_user(const User& user, const std::string& info) {
     // Your implementation goes here
     printf("add_user\n");
+    std::unique_lock<std::mutex> lck(message_queue.m);
+    message_queue.q.push({user, "add"});
+    message_queue.cv.notify_all();
     return 0; 
   }
 
   int32_t remove_user(const User& user, const std::string& info) {
     // Your implementation goes here
     printf("remove_user\n");
+    std::unique_lock<std::mutex> lck(message_queue.m);
+    message_queue.q.push({user, "remove"});
+    message_queue.cv.notify_all();
     return 0;
   }
 
 };
+
+void consume_task()
+{
+  while(true) {
+    std::unique_lock<std::mutex> lck(message_queue.m);
+    if (message_queue.q.empty()) {
+      message_queue.cv.wait(lck);
+    } else {
+      auto task = message_queue.q.front();
+      message_queue.q.pop();
+      lck.unlock();
+      if (task.type == "add") pool.add(task.user);
+      else pool.remove(task.user);
+      pool.match();
+      //do task
+    }
+  }
+}
 
 int main(int argc, char **argv) {
   int port = 9090;
@@ -45,6 +115,7 @@ int main(int argc, char **argv) {
 
   TSimpleServer server(processor, serverTransport, transportFactory, protocolFactory);
   std::cout << "start server ..." << std::endl;
+  std::thread matching_thread(consume_task);
   server.serve();
   return 0;
 }
