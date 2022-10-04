@@ -8,14 +8,14 @@ int val = 0;
 std::mutex mtx[2];
 void solve1(int fi, int se)
 {
-    std::lock_guard<std::mutex> lock1(mtx[fi]);
-    std::this_thread::sleep_for(std::chrono::microseconds(2000));
-    std::lock_guard<std::mutex> lock2(mtx[se]);
     // mtx[fi].lock();
+    // std::this_thread::sleep_for(std::chrono::microseconds(2000));
     // mtx[se].lock();
+    // 解决方法
+    std::lock(mtx[fi], mtx[se]);
     std::cout << "############### run ###################" << std::endl;
-    // mtx[fi].unlock();
-    // mtx[se].unlock();
+    mtx[fi].unlock();
+    mtx[se].unlock();
 }
 void deadlock2()
 {
