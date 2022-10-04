@@ -4,5 +4,8 @@
         "condition_variable": "cpp",
         "chrono": "cpp",
         "ostream": "cpp"
-    }
+    },
+    "python.analysis.extraPaths": [
+        "./save_system/src/save_server"
+    ]
 }

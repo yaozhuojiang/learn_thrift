@@ -2,8 +2,11 @@
 // You should copy it to another filename to avoid overwriting it.
 
 #include "match_server/Match.h"
+#include "save_client/save.h"
 #include <thrift/protocol/TBinaryProtocol.h>
 #include <thrift/server/TSimpleServer.h>
+#include <thrift/transport/TSocket.h>
+#include <thrift/transport/TTransportUtils.h>
 #include <thrift/transport/TServerSocket.h>
 #include <thrift/transport/TBufferTransports.h>
 #include <iostream>
@@ -13,13 +16,16 @@
 #include <queue>
 #include <string>
 #include <vector>
+#include <unistd.h>
 
+using namespace std;
 using namespace ::apache::thrift;
 using namespace ::apache::thrift::protocol;
 using namespace ::apache::thrift::transport;
 using namespace ::apache::thrift::server;
 
 using namespace  ::match_service;
+using namespace  ::save_service;
 
 struct Task {
   User user;
@@ -36,29 +42,77 @@ class Pool {
 public:
   void save_result(int a, int b)
   {
-    std::cout << "Match result: " << a << " " << b << std::endl;
+      std::shared_ptr<TTransport> socket(new TSocket("localhost", 9999));
+      std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
+      std::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
+      saveClient client(protocol);
+      try {
+                transport->open();
+
+                int res = client.save_data("acs_0", "6e822f5b", a, b);
+
+                if (!res) puts("success");
+                else puts("failed");
+
+                transport->close();
+      } catch (TException& tx) {
+          cout << "ERROR: " << tx.what() << endl;
+      }
+    // std::cout << "Match result: " << a << " " << b << std::endl;
+  }
+  bool safe_match(int left, int right)
+  {
+    int dt = abs(users[left].score - users[right].score);
+    int a_max_dif = wt[left] * 10;
+    int b_max_dif = wt[right] * 10;
+
+    return dt <= a_max_dif || dt <= b_max_dif;
   }
   void match()
   {
+    for (auto &x : wt) x++;
     while (users.size() > 1) {
       User a = users[0], b = users[1];
       users.erase(users.begin());
       users.erase(users.begin());
       save_result(a.id, b.id);
+      bool flag = false;
+      for (uint32_t i = 0; i < users.size(); i++) {
+        for (uint32_t j = i + 1; j < users.size(); j++) {
+          if (safe_match(i, j)) {
+            std::cout << users[i].id << " " << users[j].id << std::endl;
+            save_result(users[i].id, users[j].id);
+            users.erase(users.begin() + i);
+            users.erase(users.begin() + j - 1);
+            wt.erase(wt.begin() + i);
+            wt.erase(wt.begin() + j - 1);
+            flag = true;
+            break;
+          }
+        }
+        if (flag) break;
+      }
+      if (flag) break;
     }
   }
-  void add(User user) { users.push_back(user); }
+  void add(User user)
+  {
+    users.push_back(user);
+    wt.push_back(0);
+  }
   void remove(User user)
   {
     for (uint32_t i = 0; i < users.size(); i++) {
       if (users[i].id == user.id) {
         users.erase(users.begin() + i);
+        wt.erase(wt.begin() + i);
         break;
       }
     }
   }
 private:
   std::vector<User> users;
+  std::vector<int> wt;
 }pool;
 
 class MatchHandler : virtual public MatchIf {
@@ -92,15 +146,18 @@ void consume_task()
   while(true) {
     std::unique_lock<std::mutex> lck(message_queue.m);
     if (message_queue.q.empty()) {
-      message_queue.cv.wait(lck);
+      // message_queue.cv.wait(lck);
+      lck.unlock();
+      pool.match();
+      sleep(3);
     } else {
       auto task = message_queue.q.front();
       message_queue.q.pop();
       lck.unlock();
       if (task.type == "add") pool.add(task.user);
       else pool.remove(task.user);
-      pool.match();
       //do task
+      // pool.match();
     }
   }
 }

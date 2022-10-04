@@ -37,5 +37,6 @@ def main():
     for line in stdin:
         op, user_id, user_name, score = line.split(' ')
         operate(op, int(user_id), user_name, int(score))
+
 if __name__ == "__main__":
     main()
