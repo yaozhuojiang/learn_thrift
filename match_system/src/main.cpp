@@ -63,24 +63,25 @@ public:
   bool safe_match(int left, int right)
   {
     int dt = abs(users[left].score - users[right].score);
-    int a_max_dif = wt[left] * 10;
-    int b_max_dif = wt[right] * 10;
+    int a_max_dif = wt[left] * 50;
+    int b_max_dif = wt[right] * 50;
 
     return dt <= a_max_dif || dt <= b_max_dif;
   }
   void match()
   {
-    for (auto &x : wt) x++;
+    for (auto &x : wt) x += 1;
     while (users.size() > 1) {
-      User a = users[0], b = users[1];
-      users.erase(users.begin());
-      users.erase(users.begin());
-      save_result(a.id, b.id);
+      std::cout << " match ....." << std::endl;
+      // User a = users[0], b = users[1];
+      // users.erase(users.begin());
+      // users.erase(users.begin());
+      // save_result(a.id, b.id);
       bool flag = false;
       for (uint32_t i = 0; i < users.size(); i++) {
         for (uint32_t j = i + 1; j < users.size(); j++) {
           if (safe_match(i, j)) {
-            std::cout << users[i].id << " " << users[j].id << std::endl;
+            std::cout << users[i].id << " " << users[j].id << " " << wt[i] << " " << wt[j] << std::endl;
             save_result(users[i].id, users[j].id);
             users.erase(users.begin() + i);
             users.erase(users.begin() + j - 1);
@@ -92,7 +93,7 @@ public:
         }
         if (flag) break;
       }
-      if (flag) break;
+      if (!flag) break;
     }
   }
   void add(User user)
@@ -126,7 +127,7 @@ class MatchHandler : virtual public MatchIf {
     printf("add_user\n");
     std::unique_lock<std::mutex> lck(message_queue.m);
     message_queue.q.push({user, "add"});
-    message_queue.cv.notify_all();
+    // message_queue.cv.notify_all();
     return 0; 
   }
 
@@ -135,7 +136,7 @@ class MatchHandler : virtual public MatchIf {
     printf("remove_user\n");
     std::unique_lock<std::mutex> lck(message_queue.m);
     message_queue.q.push({user, "remove"});
-    message_queue.cv.notify_all();
+    // message_queue.cv.notify_all();
     return 0;
   }
 
@@ -149,7 +150,7 @@ void consume_task()
       // message_queue.cv.wait(lck);
       lck.unlock();
       pool.match();
-      sleep(3);
+      sleep(1);
     } else {
       auto task = message_queue.q.front();
       message_queue.q.pop();
